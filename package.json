@@ -1,0 +1,31 @@
+{
+  "name": "wealthfolio-addons",
+  "version": "0.1.0",
+  "description": "Personal Wealthfolio addon collection",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "build": "vite build",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@wealthfolio/addon-sdk": "file:.vendor/wealthfolio/packages/addon-sdk",
+    "@wealthfolio/ui": "file:.vendor/wealthfolio/packages/ui"
+  },
+  "peerDependencies": {
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.33",
+    "@types/react": "^19.2.13",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^4.3.4",
+    "rollup-plugin-external-globals": "^0.13.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.2"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": []
+  }
+}

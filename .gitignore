@@ -1,0 +1,47 @@
+# Build artifacts
+addons/*/dist/
+
+# Dependencies
+node_modules/
+
+# Vendored Wealthfolio source (cloned by build.sh, not committed)
+.vendor/
+
+# pnpm local content-addressable store (huge, root-owned by Docker)
+.pnpm-store/
+
+# pnpm v11 auto-generated workspace stub
+pnpm-workspace.yaml
+
+# IDE / editor metadata
+.idea/
+.vscode/
+*.swp
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# TypeScript incremental compilation cache
+*.tsbuildinfo
+
+# Tool caches
+.eslintcache
+.cache/
+coverage/
+
+# Vite local overrides
+*.local
+
+# Editor backups
+*~
+*.bak
+.history/
+
+# npm/pnpm config that may contain auth tokens
+.npmrc

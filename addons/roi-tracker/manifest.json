@@ -1,0 +1,32 @@
+{
+  "id": "roi-tracker-addon",
+  "name": "ROI Tracker",
+  "version": "0.1.0",
+  "description": "Shows ROI (gain / net contribution) per account with per-holding breakdown and a time-range selector (1M/3M/6M/YTD/1Y/ALL). For ALL the headline metric is lifetime ROI; for sub-periods it switches to TWR to avoid the divide-by-zero blow-ups that Wealthfolio's own Simple Return field suffers from. A view the base UI doesn't expose.",
+  "author": "Custom",
+  "main": "dist/addon.js",
+  "sdkVersion": "3.4.0",
+  "enabled": true,
+  "permissions": [
+    {
+      "category": "accounts",
+      "functions": ["getAll"],
+      "purpose": "List the user's accounts to compute one ROI row per account"
+    },
+    {
+      "category": "portfolio",
+      "functions": ["getLatestValuations", "getHoldings"],
+      "purpose": "Read totalValue and netContribution per account, plus individual holdings for the asset breakdown"
+    },
+    {
+      "category": "performance",
+      "functions": ["calculateSummary"],
+      "purpose": "Compute the cumulative Time-Weighted Return for sub-period selections (1M, 3M, 6M, YTD, 1Y)"
+    },
+    {
+      "category": "ui",
+      "functions": ["sidebar.addItem", "router.add"],
+      "purpose": "Add a sidebar item and dedicated ROI page"
+    }
+  ]
+}
