@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "Shows ROI (gain / net contribution) per account with per-holding breakdown and a time-range selector (1M/3M/6M/YTD/1Y/ALL). For ALL the headline metric is lifetime ROI; for sub-periods it switches to TWR to avoid the divide-by-zero blow-ups that Wealthfolio's own Simple Return field suffers from. A view the base UI doesn't expose.",
   "author": "Custom",
-  "main": "dist/addon.js",
+  "main": "addon.js",
   "sdkVersion": "3.4.0",
   "enabled": true,
   "permissions": [

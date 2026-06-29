@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "Shows the % weight of each holding inside an account. Select an account to see every position as a share of the total invested value.",
   "author": "Custom",
-  "main": "dist/addon.js",
+  "main": "addon.js",
   "sdkVersion": "3.4.0",
   "enabled": true,
   "permissions": [
