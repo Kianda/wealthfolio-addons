@@ -2,7 +2,7 @@ import {
   type AccountValuation,
   type AddonContext,
   type Holding,
-  type PerformanceMetrics,
+  type PerformanceResult,
 } from "@wealthfolio/addon-sdk";
 import {
   Button,
@@ -151,6 +151,26 @@ function classForReturn(value: number | null | undefined): string {
   return value >= 0 ? "text-success" : "text-destructive";
 }
 
+// ─── PerformanceResult accessors (SDK 3.6) ───────────────────────────────────
+// 3.6 replaced the flat `periodGain` / `cumulativeTwr` fields with a structured
+// result. These mirror the host's own accessors in
+// apps/frontend/src/lib/performance.ts: the summary amount is only meaningful
+// when its status is "complete", and `returns.twr` is a fraction (0.12 = 12%),
+// which is the unit fmtPct() already expects.
+
+function periodPnl(perf: PerformanceResult): number | null {
+  if (perf.summary?.amountStatus !== "complete") return null;
+  const amount = Number(perf.summary.amount);
+  return Number.isFinite(amount) ? amount : null;
+}
+
+function cumulativeTwr(perf: PerformanceResult): number | null {
+  const twr = perf.returns.twr;
+  if (twr == null) return null;
+  const value = Number(twr);
+  return Number.isFinite(value) ? value : null;
+}
+
 function buildAccountRoi(valuation: AccountValuation, name: string): AccountRoi {
   const totalValue = valuation.totalValue ?? 0;
   const netContribution = valuation.netContribution ?? 0;
@@ -185,7 +205,7 @@ export const RoiPage: React.FC<RoiPageProps> = ({ ctx }) => {
 
   // For sub-period: fetch performance summary per account.
   // For ALL: skip (lifetime ROI comes from AccountValuation directly).
-  const performanceQuery = useFetch<Map<string, PerformanceMetrics>>(
+  const performanceQuery = useFetch<Map<string, PerformanceResult>>(
     () => {
       if (timeRange === "ALL" || accountIds.length === 0) {
         return Promise.resolve(new Map());
@@ -212,7 +232,7 @@ export const RoiPage: React.FC<RoiPageProps> = ({ ctx }) => {
         (entries) =>
           new Map(
             entries
-              .filter((e): e is readonly [string, PerformanceMetrics] => e[1] !== null)
+              .filter((e): e is readonly [string, PerformanceResult] => e[1] !== null)
               .map(([id, perf]) => [id, perf]),
           ),
       );
@@ -241,10 +261,7 @@ export const RoiPage: React.FC<RoiPageProps> = ({ ctx }) => {
     }
     const perf = performanceQuery.data?.get(row.id);
     if (!perf) return { gain: 0, rate: null };
-    const periodGain = Number(perf.periodGain ?? 0);
-    const cumulativeTwr =
-      perf.cumulativeTwr != null ? Number(perf.cumulativeTwr) : null;
-    return { gain: periodGain, rate: cumulativeTwr };
+    return { gain: periodPnl(perf) ?? 0, rate: cumulativeTwr(perf) };
   };
 
   // Aggregate row (TOTAL)

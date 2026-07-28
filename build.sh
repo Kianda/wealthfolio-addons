@@ -57,6 +57,20 @@ echo
 HOST_UID="$(id -u)"
 HOST_GID="$(id -g)"
 
+# Wealthfolio version actually vendored above. This goes in the artifact name
+# because we always build against latest main: the addon's own version tracks
+# our changes, but what usually decides whether a zip still works is which
+# Wealthfolio it was compiled against.
+WF_VERSION=$(grep -oE '"version"[[:space:]]*:[[:space:]]*"[^"]+"' \
+  "${VENDOR_DIR}/package.json" | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
+WF_COMMIT=$(git -C "${VENDOR_DIR}" rev-parse --short HEAD)
+if [ -z "${WF_VERSION}" ]; then
+  echo "ERROR: could not read version from ${VENDOR_DIR}/package.json" >&2
+  exit 1
+fi
+echo "Wealthfolio version: ${WF_VERSION} (${WF_COMMIT})"
+echo
+
 # Build all addons in a single Docker container run.
 BUILD_CMDS=""
 for ADDON in "${ADDONS[@]}"; do
@@ -69,12 +83,15 @@ for ADDON in "${ADDONS[@]}"; do
     | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
   VERSION=$(grep -oE '"version"[[:space:]]*:[[:space:]]*"[^"]+"' "${MANIFEST}" \
     | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
-  ZIP="addons/${ADDON}/dist/${ADDON_ID}-${VERSION}.zip"
-  echo "  ${ADDON_ID} v${VERSION} -> ${ZIP}"
+  ZIP_NAME="${ADDON_ID}-${VERSION}-wf${WF_VERSION}.zip"
+  echo "  ${ADDON_ID} v${VERSION} -> addons/${ADDON}/dist/${ZIP_NAME}"
   BUILD_CMDS="${BUILD_CMDS}
     echo '--- Building ${ADDON} ---'
+    # Drop zips from earlier runs so dist/ only ever holds the current
+    # artifact — the name now varies with the Wealthfolio version.
+    rm -f addons/${ADDON}/dist/*.zip
     ADDON=${ADDON} ./node_modules/.bin/vite build
-    zip -j addons/${ADDON}/dist/${ADDON_ID}-${VERSION}.zip \
+    zip -j addons/${ADDON}/dist/${ZIP_NAME} \
       addons/${ADDON}/manifest.json \
       addons/${ADDON}/dist/addon.js \
       addons/${ADDON}/dist/addon.js.map"
@@ -92,9 +109,17 @@ docker run --rm \
     corepack enable
     apk add --no-cache zip
     cd /work/${VENDOR_DIR} && (pnpm install --no-frozen-lockfile || true)
-    cd /work/${VENDOR_DIR}/packages/addon-sdk && ./node_modules/.bin/tsup
-    cd /work/${VENDOR_DIR}/packages/ui && ./node_modules/.bin/tsup
+    # Use each package's own 'build' script, not bare tsup: their tsup configs
+    # set dts:false and emit declarations in a second 'build:types' step. Bare
+    # tsup produces JS with no .d.ts, which makes every SDK import 'any'.
+    cd /work/${VENDOR_DIR}/packages/addon-sdk && pnpm run build
+    cd /work/${VENDOR_DIR}/packages/ui && pnpm run build
     cd /work && (pnpm install || true)
+    # Gate the build on a real type-check: vite/esbuild strips types without
+    # checking them, so without this a build stays green while the addons have
+    # already drifted from the vendored Wealthfolio SDK.
+    echo '--- Type-checking against vendored SDK ---'
+    ./node_modules/.bin/tsc --noEmit
     ${BUILD_CMDS}
     chown -R \"\$HOST_UID:\$HOST_GID\" /work/node_modules /work/.vendor /work/pnpm-lock.yaml /work/addons 2>/dev/null || true
   "

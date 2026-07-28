@@ -1,0 +1,112 @@
+name: release
+
+# Builds every addon and publishes them as one GitHub Release.
+#
+# The tag is a repo-level marker, not an addon version — with more than one
+# addon in the repo a single tag cannot speak for all of them. Each addon's
+# version lives in its own manifest.json and travels in its zip filename:
+#
+#   git tag v2026.07.28 && git push origin v2026.07.28
+#
+#   ->  composition-addon-0.1.0-wf3.6.3.zip
+#       roi-tracker-addon-0.2.0-wf3.6.3.zip
+#
+# So a release answers "which set of addons was known good against which
+# Wealthfolio", while the per-addon versions answer "what changed in this one".
+# CalVer (v2026.07.28) reads well for the tag because releases here are driven
+# by time and upstream movement, but any v* tag works.
+
+on:
+  push:
+    tags:
+      - "v*"
+  # Re-publish an existing tag — e.g. to ship a rebuild against a newer
+  # Wealthfolio without a code change. Replaces that release's assets.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to re-release (e.g. v2026.07.28)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      # build.sh with no argument builds every addon under addons/ and
+      # type-checks the whole project first, so a type error in any addon
+      # fails the release rather than shipping a half-broken set.
+      - name: Build all addons against latest Wealthfolio
+        run: ./build.sh
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          wf_version=$(node -p "require('./.vendor/wealthfolio/package.json').version")
+          wf_commit=$(git -C .vendor/wealthfolio rev-parse --short HEAD)
+
+          # One row per addon, discovered from the manifests rather than
+          # hardcoded, so adding a third addon needs no change here.
+          assets=()
+          rows=""
+          for manifest in addons/*/manifest.json; do
+            dir=$(dirname "$manifest")
+            id=$(node -p "require('./$manifest').id")
+            version=$(node -p "require('./$manifest').version")
+            min_wf=$(node -p "require('./$manifest').minWealthfolioVersion ?? 'unset'")
+
+            zip="$dir/dist/${id}-${version}-wf${wf_version}.zip"
+            if [ ! -f "$zip" ]; then
+              echo "::error::Expected artifact $zip was not produced by build.sh."
+              ls -R addons/*/dist/ || true
+              exit 1
+            fi
+
+            sha=$(sha256sum "$zip" | cut -d' ' -f1)
+            assets+=("$zip")
+            rows="${rows}| \`${id}\` | ${version} | ${min_wf} | \`${sha}\` |"$'\n'
+          done
+
+          if [ ${#assets[@]} -eq 0 ]; then
+            echo "::error::No addon artifacts found."
+            exit 1
+          fi
+
+          {
+            echo "Built against **Wealthfolio ${wf_version}** (\`${wf_commit}\`)"
+            echo
+            echo "| Addon | Version | Min Wealthfolio | sha256 |"
+            echo "|---|---|---|---|"
+            printf '%s' "$rows"
+            echo
+            echo "Install: Settings → Addons → install from file, using the zip for the addon you want."
+            echo
+            echo "Each zip is independently versioned — a version that did not change since the"
+            echo "previous release is simply unchanged, and can be skipped."
+          } > release-notes.md
+
+          # Idempotent so workflow_dispatch re-runs replace assets in place.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --notes-file release-notes.md
+            gh release upload "$TAG" "${assets[@]}" --clobber
+          else
+            gh release create "$TAG" "${assets[@]}" \
+              --title "$TAG" \
+              --notes-file release-notes.md
+          fi
+
+          {
+            echo "### Released \`$TAG\`"
+            echo
+            cat release-notes.md
+          } >> "$GITHUB_STEP_SUMMARY"

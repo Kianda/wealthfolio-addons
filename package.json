@@ -21,7 +21,6 @@
     "@types/react": "^19.2.13",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^4.3.4",
-    "rollup-plugin-external-globals": "^0.13.0",
     "typescript": "^5.9.3",
     "vite": "^7.3.2"
   },

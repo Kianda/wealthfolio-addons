@@ -5,7 +5,18 @@
   "description": "Shows the % weight of each holding inside an account. Select an account to see every position as a share of the total invested value.",
   "author": "Custom",
   "main": "addon.js",
-  "sdkVersion": "3.4.0",
+  "sdkVersion": "3.6.0",
+  "minWealthfolioVersion": "3.6.0",
+  "hostDependencies": {
+    "@tanstack/react-query": "^5.90.0",
+    "@wealthfolio/addon-sdk": "^3.6.0",
+    "@wealthfolio/ui": "^3.6.0",
+    "date-fns": "^4.1.0",
+    "lucide-react": "^0.561.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "recharts": "^3.7.0"
+  },
   "enabled": true,
   "permissions": [
     {

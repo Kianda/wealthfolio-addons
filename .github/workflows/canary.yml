@@ -1,0 +1,159 @@
+name: canary
+
+# Builds both addons against the latest Wealthfolio main on a schedule.
+#
+# Why a cron and not push/PR: this repo pins nothing upstream on purpose —
+# build.sh clones Wealthfolio at main every run. So the thing most likely to
+# break an addon is an upstream change, and nothing in this repo changes when
+# that happens. A push-triggered job would stay green for months and only
+# surface the drift whenever someone next happened to build locally.
+
+on:
+  schedule:
+    # Mondays 06:00 UTC.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: canary
+  cancel-in-progress: false
+
+jobs:
+  build-against-latest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # build.sh runs everything (pnpm install, SDK/UI build, tsc --noEmit,
+      # vite build, zip) inside node:24-alpine via Docker, which ubuntu-latest
+      # provides. Calling it unchanged means there is no second build path in
+      # CI that can drift from the local one.
+      - name: Build against latest Wealthfolio main
+        id: build
+        run: |
+          set -o pipefail
+          ./build.sh 2>&1 | tee build.log
+
+      # Read after the build so it reflects the commit actually vendored.
+      - name: Read Wealthfolio version
+        if: always()
+        id: wf
+        run: |
+          if [ -f .vendor/wealthfolio/package.json ]; then
+            version=$(node -p "require('./.vendor/wealthfolio/package.json').version" 2>/dev/null || echo unknown)
+            commit=$(git -C .vendor/wealthfolio rev-parse --short HEAD 2>/dev/null || echo unknown)
+          else
+            version=unknown
+            commit=unknown
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+
+      - name: Upload zips
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: addons-wf${{ steps.wf.outputs.version }}
+          path: addons/*/dist/*.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Canary vs Wealthfolio ${{ steps.wf.outputs.version }} (\`${{ steps.wf.outputs.commit }}\`)"
+            echo
+            if [ "${{ steps.build.outcome }}" = "success" ]; then
+              echo "Build and type-check passed. Artifacts:"
+              echo
+              echo '```'
+              ls -1 addons/*/dist/*.zip 2>/dev/null || echo "(none)"
+              echo '```'
+            else
+              echo "**Build or type-check failed.** Last 40 lines:"
+              echo
+              echo '```'
+              tail -40 build.log 2>/dev/null || echo "(no log)"
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # One rolling issue rather than a new one per week: comment on the open
+      # drift issue if there is one, otherwise open it.
+      - name: Report drift
+        if: failure()
+        uses: actions/github-script@v7
+        env:
+          WF_VERSION: ${{ steps.wf.outputs.version }}
+          WF_COMMIT: ${{ steps.wf.outputs.commit }}
+        with:
+          script: |
+            const fs = require('fs');
+            const { WF_VERSION, WF_COMMIT } = process.env;
+
+            let tail = '(no build log)';
+            try {
+              const log = fs.readFileSync('build.log', 'utf8').split('\n');
+              tail = log.slice(-40).join('\n');
+            } catch {}
+
+            const runUrl =
+              `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}` +
+              `/actions/runs/${context.runId}`;
+
+            const body = [
+              `Canary build failed against Wealthfolio **${WF_VERSION}** (\`${WF_COMMIT}\`).`,
+              '',
+              `[Full run](${runUrl})`,
+              '',
+              '<details><summary>Last 40 lines</summary>',
+              '',
+              '```',
+              tail,
+              '```',
+              '',
+              '</details>',
+            ].join('\n');
+
+            const label = 'wf-drift';
+
+            // Ensure the label exists — createIssue fails on an unknown label.
+            try {
+              await github.rest.issues.getLabel({ ...context.repo, name: label });
+            } catch {
+              await github.rest.issues.createLabel({
+                ...context.repo,
+                name: label,
+                color: 'b60205',
+                description: 'Addons no longer build against latest Wealthfolio',
+              });
+            }
+
+            const existing = await github.rest.issues.listForRepo({
+              ...context.repo,
+              state: 'open',
+              labels: label,
+              per_page: 1,
+            });
+
+            if (existing.data.length > 0) {
+              await github.rest.issues.createComment({
+                ...context.repo,
+                issue_number: existing.data[0].number,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                ...context.repo,
+                title: `Addons fail to build against Wealthfolio ${WF_VERSION}`,
+                labels: [label],
+                body,
+              });
+            }
